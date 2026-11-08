@@ -16,11 +16,19 @@
 #define CHUNK_SIZE	0x20000
 #define CMD_LOAD	0
 #define SIG_SIZE	256
+#define PWEN_MAGIC	0x4e455750
+#define PWEN_HDR_SIZE	0x8000
+#define PACK_MAGIC	0x5041434b
 
 static const TEEC_UUID video_fw_uuid = {
 	0x526fc4fc, 0x7ee6, 0x4a12,
 	{ 0x96, 0xe3, 0x83, 0xda, 0x95, 0x65, 0xbc, 0xe8 }
 };
+
+static uint32_t get_le32(const unsigned char *p)
+{
+	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
+}
 
 static unsigned char *read_file(const char *path, long *size)
 {
@@ -54,7 +62,7 @@ int main(int argc, char **argv)
 	TEEC_Session sess;
 	TEEC_Operation op;
 	TEEC_Result res;
-	unsigned char *fw;
+	unsigned char *buf, *fw;
 	uint32_t origin;
 	long size, sent = 0;
 	int ret = 1;
@@ -64,10 +72,18 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
-	fw = read_file(argv[1], &size);
-	if (!fw) {
+	buf = read_file(argv[1], &size);
+	if (!buf) {
 		fprintf(stderr, "cannot read %s\n", argv[1]);
 		return 1;
+	}
+
+	fw = buf;
+	if (size > PWEN_HDR_SIZE + SIG_SIZE + 4 &&
+	    get_le32(buf) == PWEN_MAGIC &&
+	    get_le32(buf + PWEN_HDR_SIZE + SIG_SIZE) != PACK_MAGIC) {
+		fw += PWEN_HDR_SIZE;
+		size -= PWEN_HDR_SIZE;
 	}
 
 	res = TEEC_InitializeContext(NULL, &ctx);
@@ -123,6 +139,6 @@ close:
 finalize:
 	TEEC_FinalizeContext(&ctx);
 free_fw:
-	free(fw);
+	free(buf);
 	return ret;
 }
